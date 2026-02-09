@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL=postgresql://postgres:Dawit@123dawit@postgres:5432/chatdb
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - chat-network
+    volumes:
+      - ./backend:/app
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - chat-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  google-trends-mcp:
+    build:
+      context: ./google-news-trends-mcp
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8080"
+    environment:
+      - JWT_SECRET=your-jwt-secret-key
+      - LOG_LEVEL=INFO
+      - MCP_JWT_AUDIENCE=google-trends-mcp
+      - MCP_JWT_ISSUER=ai-chat-system
+      - MCP_JWT_ALGORITHMS=HS256
+      - MCP_JWT_PUBLIC_KEY=mcp_jwt_secret_8K9xN2mP5qR7vL3wS6tY1uJ4fZ8cX5bA9dE2gH6iK0oP3nM7jV1sW4rT8yU5fZ
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=chatdb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=Dawit@123dawit
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./supabase_schema.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - chat-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+
+networks:
+  chat-network:
+    driver: bridge
